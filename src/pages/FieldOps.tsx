@@ -52,6 +52,7 @@ export default function FieldOps() {
 
   const [tripTitle, setTripTitle] = useState('');
   const [participants, setParticipants] = useState<TripParticipant[]>([]);
+  const [boardRoutes, setBoardRoutes] = useState<string[]>([]);
 
   const [selectedParticipant, setSelectedParticipant] = useState('');
   const [tripCode, setTripCode] = useState('');
@@ -65,6 +66,7 @@ export default function FieldOps() {
   const [galleryParticipant, setGalleryParticipant] = useState<string>('all');
   const [uploadingTaskId, setUploadingTaskId] = useState<string | null>(null);
   const [uploadCaptions, setUploadCaptions] = useState<Record<string, string>>({});
+  const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const boot = async () => {
@@ -77,6 +79,7 @@ export default function FieldOps() {
 
         setTripTitle(board.title);
         setParticipants(nextParticipants);
+        setBoardRoutes(board.routes);
 
         const storedParticipant = localStorage.getItem(PARTICIPANT_STORAGE_KEY);
         const storedToken = localStorage.getItem(SESSION_STORAGE_KEY);
@@ -108,13 +111,13 @@ export default function FieldOps() {
   }, [isSessionReady, sessionToken]);
 
   const routeKeys = useMemo(() => {
-    const known = new Set<string>();
+    const known = new Set<string>(boardRoutes);
 
     tasks.forEach((task) => known.add(task.routeKey));
     gallery.forEach((attachment) => known.add(attachment.routeKey));
 
     return [...known].sort((a, b) => routeLabel(a).localeCompare(routeLabel(b)));
-  }, [tasks, gallery]);
+  }, [boardRoutes, tasks, gallery]);
 
   const summary = useMemo(() => {
     const done = tasks.filter((task) => task.status === 'done').length;
@@ -161,6 +164,7 @@ export default function FieldOps() {
       ]);
 
       setTasks(tasksPayload.tasks);
+      setDraftNotes(Object.fromEntries(tasksPayload.tasks.map((task) => [task.id, task.notes])));
       setGallery(galleryPayload.attachments);
     } catch (caughtError) {
       setError(toMessage(caughtError));
@@ -398,12 +402,18 @@ export default function FieldOps() {
                         <label className="block text-xs font-semibold text-slate-600">
                           Notes
                           <textarea
-                            defaultValue={task.notes}
+                            value={draftNotes[task.id] ?? ''}
                             placeholder="Add what worked, what broke, and what needs updates"
                             className="mt-1 w-full min-h-[80px] rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                            onBlur={(event) =>
+                            onChange={(event) =>
+                              setDraftNotes((previous) => ({
+                                ...previous,
+                                [task.id]: event.target.value,
+                              }))
+                            }
+                            onBlur={() =>
                               void handleTaskUpdate(task.id, {
-                                notes: event.target.value,
+                                notes: draftNotes[task.id] ?? '',
                               })
                             }
                           />

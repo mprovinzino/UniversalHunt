@@ -1,20 +1,32 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 
 const ACTIVE_BOARD_SLUG = process.env.FIELD_OPS_ACTIVE_SLUG ?? 'apr-2026-field-test';
-const ACTIVE_BOARD_TITLE = process.env.FIELD_OPS_ACTIVE_TITLE ?? 'Universal Hunt Trip Board — April 2026 Field Test';
+const ACTIVE_BOARD_TITLE =
+  process.env.FIELD_OPS_ACTIVE_TITLE ?? 'Universal Hunt Trip Board — April 2026 Field Test';
 const TRIP_CODE = process.env.FIELD_OPS_TRIP_CODE ?? 'universal-ops';
 const ALLOWED_PARTICIPANTS = (process.env.FIELD_OPS_PARTICIPANTS ?? 'Mike,Teammate 2,Teammate 3')
   .split(',')
   .map((name) => name.trim())
   .filter(Boolean);
 
-const ACTIVE_ROUTE_KEYS = ['citywalk', 'diagon-alley', 'minion-mischief', 'springfield-side-quest'];
-const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
-const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const ACTIVE_ROUTE_KEYS = [
+  'citywalk',
+  'diagon-alley',
+  'minion-mischief',
+  'springfield-side-quest',
+];
 const STORE_DIR = '/tmp/universal-hunt-field-ops';
 const STORE_FILE = `${STORE_DIR}/store.json`;
 const ATTACHMENTS_DIR = `${STORE_DIR}/attachments`;
+
+const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 3;
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+const MAX_NOTES_LENGTH = 2000;
+const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const ALLOWED_TASK_TYPES = new Set(['photo', 'coordinate', 'clue-test', 'note']);
+const ALLOWED_PRIORITIES = new Set(['must', 'should', 'bonus']);
+const ALLOWED_STATUSES = new Set(['open', 'in-progress', 'done']);
 
 const SEEDED_TASKS = [
   ['citywalk', 'Capture updated arrival hero photo', 'photo', 'must', 'Take a landscape photo near the CityWalk globe area for home screen hero imagery.'],
@@ -36,6 +48,8 @@ export default async (request) => {
     const store = await loadStore();
     const { endpoint, id } = parseEndpoint(request.url);
 
+    purgeExpiredSessions(store);
+
     if (request.method === 'GET' && endpoint === '/board') {
       return json(getBoardResponse(store));
     }
@@ -49,7 +63,7 @@ export default async (request) => {
 
     if (request.method === 'GET' && endpoint === '/tasks') {
       const session = requireSession(request, store);
-      return json({ tasks: store.tasks.filter((task) => task.tripBoardId === session.boardId) });
+      return json({ tasks: listBoardTasks(store, session.boardId) });
     }
 
     if (request.method === 'POST' && endpoint === '/tasks/update' && id) {
@@ -83,9 +97,18 @@ export default async (request) => {
 
     if (request.method === 'DELETE' && endpoint === '/attachments' && id) {
       const session = requireSession(request, store);
-      deleteAttachment(store, session, id);
+      await deleteAttachment(store, session, id);
       await persistStore(store);
       return json({ attachmentId: id });
+    }
+
+    if (request.method === 'GET' && endpoint === '/activity') {
+      const session = requireSession(request, store);
+      const updates = store.updates
+        .filter((entry) => entry.tripBoardId === session.boardId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, 200);
+      return json({ updates });
     }
 
     return json({ error: 'Not found' }, 404);
@@ -134,7 +157,7 @@ function createSession(store, payload) {
   }
 
   const token = randomUUID();
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 3).toISOString();
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
 
   store.sessions.push({
     id: randomUUID(),
@@ -164,11 +187,9 @@ function requireSession(request, store) {
     throw new Error('Missing session token');
   }
 
-  const active = store.sessions.find(
-    (session) => session.sessionToken === token && new Date(session.expiresAt).getTime() > Date.now(),
-  );
+  const active = store.sessions.find((session) => session.sessionToken === token);
 
-  if (!active) {
+  if (!active || new Date(active.expiresAt).getTime() <= Date.now()) {
     throw new Error('Session expired or invalid. Please re-enter the trip code.');
   }
 
@@ -178,6 +199,17 @@ function requireSession(request, store) {
   };
 }
 
+function listBoardTasks(store, boardId) {
+  return store.tasks
+    .filter((task) => task.tripBoardId === boardId)
+    .sort((a, b) => {
+      if (a.routeKey === b.routeKey) {
+        return a.title.localeCompare(b.title);
+      }
+      return a.routeKey.localeCompare(b.routeKey);
+    });
+}
+
 function updateTask(store, session, taskId, payload) {
   const task = store.tasks.find((entry) => entry.id === taskId && entry.tripBoardId === session.boardId);
 
@@ -185,15 +217,19 @@ function updateTask(store, session, taskId, payload) {
     throw new Error('Task not found');
   }
 
-  if (payload.status) {
-    if (!['open', 'in-progress', 'done'].includes(payload.status)) {
+  if (payload.status !== undefined) {
+    if (!ALLOWED_STATUSES.has(payload.status)) {
       throw new Error('Invalid status');
     }
     task.status = payload.status;
   }
 
   if (payload.notes !== undefined) {
-    task.notes = String(payload.notes);
+    const nextNotes = String(payload.notes);
+    if (nextNotes.length > MAX_NOTES_LENGTH) {
+      throw new Error(`Notes too long. Max ${MAX_NOTES_LENGTH} characters.`);
+    }
+    task.notes = nextNotes;
   }
 
   if (payload.assignedToName !== undefined) {
@@ -201,7 +237,8 @@ function updateTask(store, session, taskId, payload) {
       task.assignedToName = null;
     } else {
       const allowed = store.participants.find(
-        (participant) => participant.displayName === payload.assignedToName && participant.isActive,
+        (participant) =>
+          participant.displayName === payload.assignedToName && participant.isActive,
       );
 
       if (!allowed) {
@@ -214,6 +251,14 @@ function updateTask(store, session, taskId, payload) {
 
   task.updatedByName = session.participantName;
   task.updatedAt = new Date().toISOString();
+  store.updates.push({
+    id: randomUUID(),
+    tripBoardId: session.boardId,
+    taskId,
+    action: 'task-update',
+    byName: session.participantName,
+    createdAt: task.updatedAt,
+  });
 }
 
 async function uploadAttachment(store, session, taskId, formData) {
@@ -242,12 +287,15 @@ async function uploadAttachment(store, session, taskId, formData) {
 
   const extension = file.name.includes('.') ? file.name.split('.').at(-1) : 'jpg';
   const attachmentId = randomUUID();
-  const filename = `${attachmentId}.${extension}`;
-  const filePath = `${ATTACHMENTS_DIR}/${filename}`;
+  const storageFilename = `${attachmentId}.${safeExtension(extension)}`;
+  const filePath = `${ATTACHMENTS_DIR}/${storageFilename}`;
   const bytes = new Uint8Array(await file.arrayBuffer());
   await writeFile(filePath, bytes);
 
-  const caption = typeof captionValue === 'string' && captionValue.trim() ? captionValue.trim() : null;
+  const caption =
+    typeof captionValue === 'string' && captionValue.trim().length > 0
+      ? captionValue.trim().slice(0, 240)
+      : null;
   const createdAt = new Date().toISOString();
 
   const attachment = {
@@ -256,7 +304,7 @@ async function uploadAttachment(store, session, taskId, formData) {
     tripBoardId: task.tripBoardId,
     routeKey: task.routeKey,
     taskType: task.taskType,
-    blobKey: filename,
+    blobKey: storageFilename,
     filename: file.name,
     mimeType: file.type,
     uploadedByName: session.participantName,
@@ -266,6 +314,14 @@ async function uploadAttachment(store, session, taskId, formData) {
   };
 
   store.attachments.push(attachment);
+  store.updates.push({
+    id: randomUUID(),
+    tripBoardId: session.boardId,
+    taskId,
+    action: 'attachment-upload',
+    byName: session.participantName,
+    createdAt,
+  });
 
   return attachment;
 }
@@ -296,7 +352,7 @@ async function sendAttachment(store, attachmentId) {
   });
 }
 
-function deleteAttachment(store, session, attachmentId) {
+async function deleteAttachment(store, session, attachmentId) {
   const index = store.attachments.findIndex(
     (entry) => entry.id === attachmentId && entry.tripBoardId === session.boardId,
   );
@@ -305,7 +361,30 @@ function deleteAttachment(store, session, attachmentId) {
     throw new Error('Attachment not found');
   }
 
+  const attachment = store.attachments[index];
   store.attachments.splice(index, 1);
+
+  try {
+    await unlink(`${ATTACHMENTS_DIR}/${attachment.blobKey}`);
+  } catch {
+    // If the file already disappeared we still remove metadata.
+  }
+
+  store.updates.push({
+    id: randomUUID(),
+    tripBoardId: session.boardId,
+    taskId: attachment.tripTaskId,
+    action: 'attachment-delete',
+    byName: session.participantName,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+function purgeExpiredSessions(store) {
+  const now = Date.now();
+  store.sessions = store.sessions.filter(
+    (session) => new Date(session.expiresAt).getTime() > now,
+  );
 }
 
 async function loadStore() {
@@ -313,12 +392,21 @@ async function loadStore() {
 
   try {
     const raw = await readFile(STORE_FILE, 'utf-8');
-    return JSON.parse(raw);
+    return migrateStore(JSON.parse(raw));
   } catch {
     const seeded = seedStore();
     await persistStore(seeded);
     return seeded;
   }
+}
+
+function migrateStore(store) {
+  return {
+    ...store,
+    updates: Array.isArray(store.updates) ? store.updates : [],
+    sessions: Array.isArray(store.sessions) ? store.sessions : [],
+    attachments: Array.isArray(store.attachments) ? store.attachments : [],
+  };
 }
 
 async function persistStore(store) {
@@ -334,20 +422,32 @@ function seedStore() {
     isActive: true,
   }));
 
-  const tasks = SEEDED_TASKS.map(([routeKey, title, taskType, priority, instructions]) => ({
-    id: randomUUID(),
-    tripBoardId: boardId,
-    routeKey,
-    title,
-    taskType,
-    priority,
-    status: 'open',
-    instructions,
-    assignedToName: null,
-    notes: '',
-    updatedByName: null,
-    updatedAt: new Date().toISOString(),
-  }));
+  const tasks = SEEDED_TASKS.map(([routeKey, title, taskType, priority, instructions]) => {
+    if (!ACTIVE_ROUTE_KEYS.includes(routeKey)) {
+      throw new Error(`Seeded route key not in board routes: ${routeKey}`);
+    }
+    if (!ALLOWED_TASK_TYPES.has(taskType)) {
+      throw new Error(`Invalid seeded task type: ${taskType}`);
+    }
+    if (!ALLOWED_PRIORITIES.has(priority)) {
+      throw new Error(`Invalid seeded task priority: ${priority}`);
+    }
+
+    return {
+      id: randomUUID(),
+      tripBoardId: boardId,
+      routeKey,
+      title,
+      taskType,
+      priority,
+      status: 'open',
+      instructions,
+      assignedToName: null,
+      notes: '',
+      updatedByName: null,
+      updatedAt: new Date().toISOString(),
+    };
+  });
 
   return {
     board: {
@@ -363,14 +463,14 @@ function seedStore() {
     tasks,
     attachments: [],
     sessions: [],
+    updates: [],
   };
 }
 
 function parseEndpoint(url) {
   const pathname = new URL(url).pathname;
-  const normalized = pathname
-    .replace('/.netlify/functions/field-ops', '')
-    .replace('/api/field-ops', '') || '/';
+  const normalized =
+    pathname.replace('/.netlify/functions/field-ops', '').replace('/api/field-ops', '') || '/';
 
   if (/^\/tasks\/[^/]+\/update$/.test(normalized)) {
     const [, , id] = normalized.split('/');
@@ -388,6 +488,10 @@ function parseEndpoint(url) {
   }
 
   return { endpoint: normalized, id: null };
+}
+
+function safeExtension(extension) {
+  return extension.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
 }
 
 function hashTripCode(code) {

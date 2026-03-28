@@ -66,6 +66,20 @@ export interface FieldOpsGalleryResponse {
   attachments: TripTaskAttachment[];
 }
 
+
+export interface TripTaskUpdate {
+  id: string;
+  tripBoardId: string;
+  taskId: string;
+  action: 'task-update' | 'attachment-upload' | 'attachment-delete';
+  byName: string;
+  createdAt: string;
+}
+
+export interface FieldOpsActivityResponse {
+  updates: TripTaskUpdate[];
+}
+
 export interface FieldOpsApiError {
   error: string;
 }

@@ -15,7 +15,7 @@ The backend is implemented as a Netlify Function at:
 
 - `netlify/functions/field-ops.mjs`
 
-The function currently stores state in temporary runtime storage (`/tmp`) for fast MVP iteration.
+The function currently stores state in temporary runtime storage (`/tmp`) for fast MVP iteration. It now also keeps a lightweight activity feed for task/attachment events.
 
 ### Why this is temporary
 
@@ -48,6 +48,7 @@ Redirected by `netlify.toml`:
 - `GET /api/field-ops/gallery?slug=...`
 - `GET /api/field-ops/attachments/:id`
 - `DELETE /api/field-ops/attachments/:id`
+- `GET /api/field-ops/activity?slug=...`
 
 ## Frontend route
 

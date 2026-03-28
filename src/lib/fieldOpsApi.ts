@@ -1,6 +1,7 @@
 import type {
   FieldOpsBoardResponse,
   FieldOpsGalleryResponse,
+  FieldOpsActivityResponse,
   FieldOpsTasksResponse,
   TripSession,
   TripTaskAttachment,
@@ -122,4 +123,14 @@ export async function deleteAttachment(
   });
 
   return parseResponse<{ attachmentId: string }>(response);
+}
+
+export async function getActivity(slug: string, sessionToken: string): Promise<FieldOpsActivityResponse> {
+  const response = await fetch(`${API_BASE}/activity?slug=${encodeURIComponent(slug)}`, {
+    headers: {
+      'x-field-ops-session': sessionToken,
+    },
+  });
+
+  return parseResponse<FieldOpsActivityResponse>(response);
 }
