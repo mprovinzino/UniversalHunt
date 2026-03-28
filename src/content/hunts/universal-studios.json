@@ -1,0 +1,35 @@
+[
+  {
+    "id": "ww-quick-hunt",
+    "title": "Wizarding World Quick Hunt",
+    "description": "A magical warm-up! Find Kreacher peeking from his window and discover the hidden wand spells of Diagon Alley.",
+    "scope": "land",
+    "difficulty": "easy",
+    "theme": "wizarding",
+    "parks": ["universal-studios"],
+    "lands": ["wizarding-world"],
+    "challengeIds": ["ww-kreacher-005", "ww-diagon-001"],
+    "estimatedTime": "30 min",
+    "bonusPoints": 25,
+    "icon": "🧙",
+    "sortOrder": 1,
+    "status": "active",
+    "featured": true
+  },
+  {
+    "id": "us-park-sampler",
+    "title": "Universal Studios Sampler",
+    "description": "Get a taste of everything Universal Studios has to offer — from wizards to giant donuts!",
+    "scope": "park",
+    "difficulty": "medium",
+    "theme": "default",
+    "parks": ["universal-studios"],
+    "lands": ["wizarding-world", "springfield"],
+    "challengeIds": ["ww-diagon-001", "ww-kreacher-005", "sp-lard-004"],
+    "estimatedTime": "45 min",
+    "bonusPoints": 30,
+    "icon": "🎢",
+    "sortOrder": 4,
+    "status": "active"
+  }
+]

@@ -1,0 +1,60 @@
+[
+  {
+    "id": "jp-raptor-002",
+    "title": "Raptor Encounter Photo Op",
+    "description": "Track down the Raptor Encounter experience in Jurassic Park and snap a photo with Blue the Velociraptor. She's friendly… mostly. Find her near the Jurassic Park Discovery Center.",
+    "park": "islands-of-adventure",
+    "land": "jurassic-park",
+    "coordinates": { "lat": 28.4722, "lng": -81.4710 },
+    "points": 30,
+    "difficulty": "easy",
+    "type": "photo",
+    "theme": "jurassic",
+    "hint": "Head toward the Discovery Center — you'll hear her before you see her.",
+    "clues": [
+      "The Raptor Encounter is a live show near the Jurassic Park Discovery Center.",
+      "Check the park schedule for show times — Blue appears at specific intervals."
+    ],
+    "photoRequired": true,
+    "searchRadius": 40,
+    "estimatedTime": "5 min",
+    "tags": ["jurassic-park", "photo-op", "character-meet"],
+    "maxStars": 3,
+    "status": "active",
+    "verification": {
+      "photo": true,
+      "location": true
+    },
+    "availability": {
+      "mayBeUnavailable": true,
+      "availabilityNote": "Live character interactions can vary by operations and show schedule."
+    }
+  },
+  {
+    "id": "mv-spidey-003",
+    "title": "Spider-Man's Hidden Camera",
+    "description": "Outside The Amazing Adventures of Spider-Man ride, find the Daily Bugle newspaper stand with a hidden photo opportunity. Strike a web-slinging pose and capture the moment!",
+    "park": "islands-of-adventure",
+    "land": "marvel",
+    "coordinates": { "lat": 28.4712, "lng": -81.4690 },
+    "points": 25,
+    "difficulty": "easy",
+    "type": "photo",
+    "theme": "marvel",
+    "hint": "Look for the Daily Bugle newspaper stand outside the ride entrance.",
+    "clues": [
+      "The photo spot is in the plaza area just before you enter the Spider-Man ride queue.",
+      "Find the newspaper stand with the Daily Bugle headlines — strike your best Spidey pose!"
+    ],
+    "photoRequired": true,
+    "searchRadius": 30,
+    "estimatedTime": "5 min",
+    "tags": ["marvel", "spider-man", "photo-op"],
+    "maxStars": 3,
+    "status": "active",
+    "verification": {
+      "photo": true,
+      "location": true
+    }
+  }
+]

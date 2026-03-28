@@ -1,0 +1,19 @@
+[
+  {
+    "id": "ioa-adventure-hunt",
+    "title": "Islands Discovery Hunt",
+    "description": "Explore two of Islands of Adventure's most exciting lands — from dinosaurs to superheroes!",
+    "scope": "park",
+    "difficulty": "medium",
+    "theme": "jurassic",
+    "parks": ["islands-of-adventure"],
+    "lands": ["jurassic-park", "marvel"],
+    "challengeIds": ["jp-raptor-002", "mv-spidey-003"],
+    "estimatedTime": "20 min",
+    "bonusPoints": 20,
+    "icon": "🏝️",
+    "sortOrder": 3,
+    "status": "active",
+    "featured": true
+  }
+]

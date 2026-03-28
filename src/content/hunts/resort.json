@@ -1,0 +1,20 @@
+[
+  {
+    "id": "full-resort-epic",
+    "title": "Ultimate Resort Core Hunt",
+    "description": "Link Universal Studios, Islands of Adventure, CityWalk, and the lagoon into one continuous scavenger route across the whole resort core.",
+    "scope": "cross-park",
+    "difficulty": "hard",
+    "theme": "default",
+    "parks": ["universal-studios", "islands-of-adventure", "citywalk"],
+    "lands": ["wizarding-world", "springfield", "jurassic-park", "marvel", "citywalk", "central-lagoon"],
+    "challengeIds": ["ww-diagon-001", "ww-kreacher-005", "sp-lard-004", "jp-raptor-002", "mv-spidey-003", "cw-globe-006", "cw-lagoon-007"],
+    "estimatedTime": "2.5 hours",
+    "bonusPoints": 90,
+    "icon": "🏆",
+    "sortOrder": 5,
+    "status": "active",
+    "featured": true,
+    "unlockChallengeIds": ["ww-diagon-001", "jp-raptor-002"]
+  }
+]

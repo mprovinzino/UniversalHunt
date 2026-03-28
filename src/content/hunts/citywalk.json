@@ -1,0 +1,19 @@
+[
+  {
+    "id": "citywalk-access-hunt",
+    "title": "CityWalk Access Hunt",
+    "description": "A no-ticket route through the public side of the resort, built for arrival days, evening resets, or friends without park admission.",
+    "scope": "park",
+    "difficulty": "easy",
+    "theme": "citywalk",
+    "parks": ["citywalk"],
+    "lands": ["citywalk", "central-lagoon"],
+    "challengeIds": ["cw-globe-006", "cw-lagoon-007"],
+    "estimatedTime": "25 min",
+    "bonusPoints": 20,
+    "icon": "🌴",
+    "sortOrder": 2,
+    "status": "active",
+    "featured": true
+  }
+]

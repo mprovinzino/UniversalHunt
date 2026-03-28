@@ -1,0 +1,57 @@
+[
+  {
+    "id": "cw-globe-006",
+    "title": "CityWalk Globe Arrival Shot",
+    "description": "Start outside the parks and frame the Universal globe with the CityWalk approach in the background. This is the perfect no-ticket kickoff challenge and a great benchmark photo for trip updates.",
+    "park": "citywalk",
+    "land": "citywalk",
+    "coordinates": { "lat": 28.4742, "lng": -81.4667 },
+    "points": 20,
+    "difficulty": "easy",
+    "type": "photo",
+    "theme": "citywalk",
+    "hint": "Stay outside the turnstiles near the main security and arrival approach.",
+    "clues": [
+      "You do not need park admission for this one.",
+      "Look for the classic Universal globe viewpoint before you enter CityWalk proper."
+    ],
+    "photoRequired": true,
+    "searchRadius": 45,
+    "estimatedTime": "5 min",
+    "tags": ["citywalk", "entry", "arrival-photo"],
+    "maxStars": 3,
+    "status": "active",
+    "featured": true,
+    "verification": {
+      "photo": true,
+      "location": true
+    }
+  },
+  {
+    "id": "cw-lagoon-007",
+    "title": "Lagoon Link Lookout",
+    "description": "Walk the waterfront path and find a clean viewing angle where the lagoon ties together Islands of Adventure, Universal Studios, and CityWalk. Capture the connective heart of the resort.",
+    "park": "citywalk",
+    "land": "central-lagoon",
+    "coordinates": { "lat": 28.4733, "lng": -81.4724 },
+    "points": 35,
+    "difficulty": "medium",
+    "type": "find",
+    "theme": "citywalk",
+    "hint": "Head toward the central water and look for an open sightline between the districts.",
+    "clues": [
+      "This is strongest near the open lagoon-side walkway outside the park gates.",
+      "Look for a place where the water and resort skyline both fit into the frame."
+    ],
+    "photoRequired": true,
+    "searchRadius": 55,
+    "estimatedTime": "10 min",
+    "tags": ["lagoon", "waterfront", "citywalk"],
+    "maxStars": 3,
+    "status": "active",
+    "verification": {
+      "photo": true,
+      "location": true
+    }
+  }
+]

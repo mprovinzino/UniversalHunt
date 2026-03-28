@@ -1,0 +1,9 @@
+route_id,title,park,primary_land,route_type,audience,difficulty,play_style,estimated_time,build_priority,start_clue_id,final_clue_id,summary
+usf-minion-mischief,Minion Mischief,universal-studios,minion-land,starter,family,easy,linear,15-25 min,now,MN-01,MN-05,Short front-of-park starter route built on stable visual anchors and easy proof collection.
+usf-secrets-of-diagon-alley,Secrets of Diagon Alley,universal-studios,wizarding-world,expert,all-ages,medium-hard,linear,35-55 min,now,DA-01,DA-10,Dense wizarding route with the strongest fixed-answer discovery moments in the park.
+usf-dreamworks-neighborhood-quest,DreamWorks Neighborhood Quest,universal-studios,dreamworks-land,side-quest,family,easy,linear,15-25 min,next,DW-01,DW-05,Family-forward route using fixed environment targets and low-friction proof.
+usf-hollywood-screen-test,Hollywood Screen Test,universal-studios,hollywood,side-quest,all-ages,easy,linear,20-30 min,next,HW-01,HW-05,Classic Universal props and marquee-style anchors with broad appeal.
+usf-new-york-backlot-beat,New York Backlot Beat,universal-studios,new-york,expert,teens-adults,medium,linear,20-35 min,later,NY-01,NY-04,Dense city-block route with fan-service details and stronger ops sensitivity.
+usf-springfield-side-quest,Springfield Side Quest,universal-studios,springfield,side-quest,family,easy,linear,15-20 min,later,SP-01,SP-04,Comedy-forward side quest built on obvious visual anchors and easy team scoring.
+usf-san-francisco-soundstage,San Francisco Soundstage,universal-studios,san-francisco,side-quest,all-ages,easy,linear,10-20 min,later,SF-01,SF-02,Short industrial-feeling route with audio and legacy-movie tribute potential.
+usf-world-expo-bonus-module,World Expo Bonus Module,universal-studios,world-expo,bonus-module,competitive,medium-hard,challenge-mode,15-30 min,bonus-only,WE-01,WE-03,Optional competitive content centered on ride access and score-based challenge play.
