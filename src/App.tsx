@@ -11,6 +11,7 @@ const Profile = lazy(() => import('./pages/Profile'));
 const Hunts = lazy(() => import('./pages/Hunts'));
 const HuntDetail = lazy(() => import('./pages/HuntDetail'));
 const Admin = lazy(() => import('./pages/Admin'));
+const FieldOps = lazy(() => import('./pages/FieldOps'));
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
               <Route path="/challenges/:id" element={<ChallengeDetail />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/admin" element={<Admin />} />
+              <Route path="/field-ops" element={<FieldOps />} />
             </Routes>
           </Suspense>
         </main>
