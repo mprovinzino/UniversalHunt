@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Pencil, Check, X, Crosshair, Star, Lightbulb,
-  Trophy, RotateCcw, Calendar, AlertTriangle, Compass, ClipboardList,
+  Trophy, RotateCcw, Calendar, AlertTriangle, Compass, ClipboardList, Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useChallenges } from '../hooks/useChallenges';
@@ -242,6 +242,16 @@ export default function Profile() {
         >
           <ClipboardList size={16} />
           Open Field Testing Dashboard
+        </Link>
+
+        <Link
+          to="/field-ops"
+          className="w-full mb-3 py-3 rounded-xl text-slate-700 font-medium text-sm
+                     border border-slate-200 bg-white active:scale-[0.98] transition-transform
+                     flex items-center justify-center gap-2"
+        >
+          <Users size={16} />
+          Open Shared Field Ops Board
         </Link>
 
         {!showResetConfirm ? (
