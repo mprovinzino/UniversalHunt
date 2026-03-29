@@ -25,6 +25,7 @@ export default function Admin() {
   const [activePark, setActivePark] = useState<Park | 'all'>('all');
   const [photoProofs, setPhotoProofs] = useState<Record<string, PhotoProofRecord>>({});
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [calibrationCopyState, setCalibrationCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
 
   useEffect(() => {
     getAllPhotoProofs()
@@ -56,6 +57,7 @@ export default function Admin() {
   const draftCount = Object.keys(drafts).length;
 
   const checklistMarkdown = buildChecklistMarkdown(filteredChallenges, items, getProgress, photoProofs);
+  const calibrationDraftMarkdown = buildCalibrationDraftMarkdown(filteredChallenges, drafts);
 
   const copyChecklist = async () => {
     try {
@@ -72,6 +74,25 @@ export default function Admin() {
     const link = document.createElement('a');
     link.href = url;
     link.download = 'universal-hunt-field-checklist.md';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const copyCalibrationDrafts = async () => {
+    try {
+      await navigator.clipboard.writeText(calibrationDraftMarkdown);
+      setCalibrationCopyState('copied');
+    } catch {
+      setCalibrationCopyState('error');
+    }
+  };
+
+  const downloadCalibrationDrafts = () => {
+    const blob = new Blob([calibrationDraftMarkdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'universal-hunt-calibration-drafts.md';
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -96,7 +117,7 @@ export default function Admin() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mt-4">
+      <div className="grid grid-cols-2 gap-3 mt-4">
         <SummaryCard label="Completed" value={completedCount} Icon={CheckCircle2} color="#16A34A" />
         <SummaryCard label="Proof Photos" value={proofCount} Icon={Camera} color="#2563EB" />
         <SummaryCard label="Flagged" value={flaggedCount} Icon={Wrench} color="#EA580C" />
@@ -128,6 +149,29 @@ export default function Admin() {
             className="px-3 py-2 rounded-lg bg-red-50 text-red-600 text-sm font-semibold"
           >
             Reset Notes
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+        <p className="text-sm font-semibold text-slate-800">Calibration draft export</p>
+        <p className="text-xs text-slate-500 mt-1">
+          Copy grouped coordinate and radius snippets for the static challenge JSON files.
+        </p>
+        <div className="mt-3 flex gap-2 flex-wrap">
+          <button
+            onClick={copyCalibrationDrafts}
+            className="px-3 py-2 rounded-lg bg-sky-700 text-white text-sm font-semibold flex items-center gap-2"
+          >
+            <Copy size={14} />
+            {calibrationCopyState === 'copied' ? 'Copied' : 'Copy Draft Export'}
+          </button>
+          <button
+            onClick={downloadCalibrationDrafts}
+            className="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold flex items-center gap-2"
+          >
+            <Download size={14} />
+            Download Draft Export
           </button>
         </div>
       </div>
@@ -235,6 +279,8 @@ export default function Admin() {
                         {drafts[challenge.id].lat.toFixed(6)}, {drafts[challenge.id].lng.toFixed(6)}
                       </p>
                       <p className="text-xs text-sky-700 mt-1">
+                        Radius {drafts[challenge.id].searchRadius}m ·
+                        {' '}
                         Captured at zoom {drafts[challenge.id].zoom.toFixed(2)} on{' '}
                         {new Date(drafts[challenge.id].capturedAt).toLocaleString()}
                       </p>
@@ -243,7 +289,7 @@ export default function Admin() {
                       <button
                         onClick={() => {
                           void navigator.clipboard.writeText(
-                            `"coordinates": { "lat": ${drafts[challenge.id].lat.toFixed(6)}, "lng": ${drafts[challenge.id].lng.toFixed(6)} }`,
+                            `"coordinates": { "lat": ${drafts[challenge.id].lat.toFixed(6)}, "lng": ${drafts[challenge.id].lng.toFixed(6)} },\n"searchRadius": ${drafts[challenge.id].searchRadius}`,
                           );
                         }}
                         className="px-3 py-2 rounded-lg bg-white text-sky-700 text-xs font-semibold border border-sky-200"
@@ -300,6 +346,60 @@ function buildChecklistMarkdown(
   }
 
   return lines.join('\n');
+}
+
+function buildCalibrationDraftMarkdown(
+  challenges: ReturnType<typeof useChallenges>,
+  drafts: ReturnType<typeof useCalibrationDrafts>['drafts'],
+) {
+  const grouped = new Map<string, typeof challenges>();
+
+  for (const challenge of challenges) {
+    if (!drafts[challenge.id]) continue;
+    const key = challengeSourcePath(challenge.park);
+    grouped.set(key, [...(grouped.get(key) ?? []), challenge]);
+  }
+
+  const lines = [
+    '# Universal Hunt Calibration Draft Export',
+    '',
+    `Generated: ${new Date().toLocaleString()}`,
+    '',
+  ];
+
+  if (grouped.size === 0) {
+    lines.push('No saved calibration drafts for the current filter.');
+    return lines.join('\n');
+  }
+
+  for (const [path, pathChallenges] of grouped.entries()) {
+    lines.push(`## ${path}`);
+    lines.push('');
+
+    for (const challenge of pathChallenges) {
+      const draft = drafts[challenge.id];
+      if (!draft) continue;
+
+      lines.push(`### ${challenge.title} (\`${challenge.id}\`)`);
+      lines.push(`- Current: ${challenge.coordinates.lat.toFixed(6)}, ${challenge.coordinates.lng.toFixed(6)} · radius ${challenge.searchRadius}m`);
+      lines.push(`- Draft: ${draft.lat.toFixed(6)}, ${draft.lng.toFixed(6)} · radius ${draft.searchRadius}m`);
+      lines.push(`- Captured: ${new Date(draft.capturedAt).toLocaleString()} at zoom ${draft.zoom.toFixed(2)}`);
+      lines.push('```json');
+      lines.push(`"coordinates": { "lat": ${draft.lat.toFixed(6)}, "lng": ${draft.lng.toFixed(6)} },`);
+      lines.push(`"searchRadius": ${draft.searchRadius}`);
+      lines.push('```');
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function challengeSourcePath(park: Park) {
+  if (park === 'universal-studios') return 'src/content/challenges/universal-studios.json';
+  if (park === 'islands-of-adventure') return 'src/content/challenges/islands-of-adventure.json';
+  if (park === 'citywalk') return 'src/content/challenges/citywalk.json';
+  return 'src/content/challenges/unknown.json';
 }
 
 function FilterButton({

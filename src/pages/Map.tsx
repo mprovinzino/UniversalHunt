@@ -83,6 +83,7 @@ export default function Map() {
   const [showHotels, setShowHotels] = useState(true);
   const [pinpointMode, setPinpointMode] = useState(false);
   const [calibrationPoint, setCalibrationPoint] = useState<CalibrationPoint | null>(null);
+  const [calibrationRadius, setCalibrationRadius] = useState(40);
   const [copyMessage, setCopyMessage] = useState('');
   const [activeCalibrationChallengeId, setActiveCalibrationChallengeId] = useState('');
   const pinpointModeRef = useRef(pinpointMode);
@@ -233,6 +234,7 @@ export default function Map() {
     setSelectedChallenge(challenge);
     setSelectedHotel(null);
     setActiveCalibrationChallengeId(challenge.id);
+    setCalibrationRadius(drafts[challenge.id]?.searchRadius ?? challenge.searchRadius);
 
     // Fly to the challenge
     mapInstance?.flyTo({
@@ -240,7 +242,7 @@ export default function Map() {
       zoom: 17,
       duration: 600,
     });
-  }, [mapInstance]);
+  }, [drafts, mapInstance]);
 
   const handleHotelClick = useCallback((hotel: ResortHotel) => {
     setSelectedHotel(hotel);
@@ -292,10 +294,10 @@ export default function Map() {
   const copyJsonSnippet = useCallback(() => {
     if (!calibrationPoint) return;
     void copyText(
-      `"coordinates": { "lat": ${calibrationPoint.lat.toFixed(6)}, "lng": ${calibrationPoint.lng.toFixed(6)} }`,
-      'JSON coordinate snippet copied.',
+      `"coordinates": { "lat": ${calibrationPoint.lat.toFixed(6)}, "lng": ${calibrationPoint.lng.toFixed(6)} },\n"searchRadius": ${calibrationRadius}`,
+      'JSON calibration snippet copied.',
     );
-  }, [calibrationPoint, copyText]);
+  }, [calibrationPoint, calibrationRadius, copyText]);
 
   const saveCalibrationDraft = useCallback(() => {
     if (!calibrationPoint || !activeCalibrationChallengeId) return;
@@ -305,10 +307,11 @@ export default function Map() {
       lat: Number(calibrationPoint.lat.toFixed(6)),
       lng: Number(calibrationPoint.lng.toFixed(6)),
       zoom: Number(calibrationPoint.zoom.toFixed(2)),
+      searchRadius: calibrationRadius,
       capturedAt: new Date().toISOString(),
     });
     setCopyMessage('Calibration draft saved to the admin review queue.');
-  }, [activeCalibrationChallengeId, calibrationPoint, saveDraft]);
+  }, [activeCalibrationChallengeId, calibrationPoint, calibrationRadius, saveDraft]);
 
   if (!mapToken) {
     return (
@@ -466,7 +469,17 @@ export default function Map() {
                   </label>
                   <select
                     value={activeCalibrationChallengeId}
-                    onChange={(event) => setActiveCalibrationChallengeId(event.target.value)}
+                    onChange={(event) => {
+                      const nextChallengeId = event.target.value;
+                      setActiveCalibrationChallengeId(nextChallengeId);
+
+                      const nextChallenge = challenges.find((challenge) => challenge.id === nextChallengeId);
+                      if (nextChallenge) {
+                        setCalibrationRadius(
+                          drafts[nextChallengeId]?.searchRadius ?? nextChallenge.searchRadius,
+                        );
+                      }
+                    }}
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 bg-white"
                   >
                     <option value="">Select a challenge</option>
@@ -476,6 +489,24 @@ export default function Map() {
                       </option>
                     ))}
                   </select>
+                  {activeCalibrationChallengeId && (
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <PinReadout
+                        label="Current Lat"
+                        value={
+                          filtered.find((challenge) => challenge.id === activeCalibrationChallengeId)
+                            ?.coordinates.lat.toFixed(6) ?? 'n/a'
+                        }
+                      />
+                      <PinReadout
+                        label="Current Lng"
+                        value={
+                          filtered.find((challenge) => challenge.id === activeCalibrationChallengeId)
+                            ?.coordinates.lng.toFixed(6) ?? 'n/a'
+                        }
+                      />
+                    </div>
+                  )}
                   {activeCalibrationChallengeId && drafts[activeCalibrationChallengeId] && (
                     <p className="mt-2 text-xs text-slate-400">
                       Existing draft saved for this challenge. Saving again will replace it.
@@ -483,10 +514,31 @@ export default function Map() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   <PinReadout label="Lat" value={calibrationPoint.lat.toFixed(6)} />
                   <PinReadout label="Lng" value={calibrationPoint.lng.toFixed(6)} />
                   <PinReadout label="Zoom" value={calibrationPoint.zoom.toFixed(2)} />
+                  <PinReadout label="Radius" value={`${calibrationRadius}m`} />
+                </div>
+
+                <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200 p-3">
+                  <label className="text-[11px] uppercase tracking-wide text-slate-400 block mb-2">
+                    Search radius
+                  </label>
+                  <input
+                    type="range"
+                    min={15}
+                    max={120}
+                    step={5}
+                    value={calibrationRadius}
+                    onChange={(event) => setCalibrationRadius(Number(event.target.value))}
+                    className="w-full"
+                  />
+                  <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                    <span>Tighter object pin</span>
+                    <span>{calibrationRadius} meters</span>
+                    <span>Broader area</span>
+                  </div>
                 </div>
 
                 <div className="flex gap-2 mt-3 flex-wrap">

@@ -5,6 +5,7 @@ export interface CalibrationDraft {
   lat: number;
   lng: number;
   zoom: number;
+  searchRadius: number;
   capturedAt: string;
 }
 
