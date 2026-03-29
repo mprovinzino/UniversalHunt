@@ -10,11 +10,34 @@ import type {
 
 const API_BASE = '/api/field-ops';
 
+export class FieldOpsRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'FieldOpsRequestError';
+    this.status = status;
+  }
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
-  const payload = (await response.json()) as T & { error?: string };
+  let payload: (T & { error?: string }) | null = null;
+
+  try {
+    payload = (await response.json()) as T & { error?: string };
+  } catch {
+    payload = null;
+  }
 
   if (!response.ok) {
-    throw new Error(payload.error ?? 'Unexpected field ops error');
+    throw new FieldOpsRequestError(
+      payload?.error ?? response.statusText ?? 'Unexpected field ops error',
+      response.status,
+    );
+  }
+
+  if (payload === null) {
+    throw new FieldOpsRequestError('Unexpected empty response from field ops API', response.status);
   }
 
   return payload;
@@ -133,4 +156,12 @@ export async function getActivity(slug: string, sessionToken: string): Promise<F
   });
 
   return parseResponse<FieldOpsActivityResponse>(response);
+}
+
+export function isRetryableFieldOpsError(error: unknown) {
+  if (error instanceof FieldOpsRequestError) {
+    return error.status === 409 || error.status === 429 || error.status >= 500;
+  }
+
+  return error instanceof TypeError;
 }

@@ -53,6 +53,8 @@ export interface TripTaskAttachment {
   downloadUrl: string;
 }
 
+export type FieldOpsActivityAction = 'task-update' | 'attachment-upload' | 'attachment-delete';
+
 export interface FieldOpsBoardResponse {
   board: TripBoard;
   participants: TripParticipant[];
@@ -71,9 +73,13 @@ export interface TripTaskUpdate {
   id: string;
   tripBoardId: string;
   taskId: string;
-  action: 'task-update' | 'attachment-upload' | 'attachment-delete';
+  action: FieldOpsActivityAction;
   byName: string;
   createdAt: string;
+  routeKey: string | null;
+  taskTitle: string | null;
+  attachmentId: string | null;
+  caption: string | null;
 }
 
 export interface FieldOpsActivityResponse {

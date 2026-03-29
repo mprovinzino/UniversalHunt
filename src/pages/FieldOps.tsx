@@ -4,6 +4,7 @@ import {
   Camera,
   CheckCircle2,
   ClipboardList,
+  History,
   LoaderCircle,
   Lock,
   Route,
@@ -13,9 +14,11 @@ import {
 import {
   createSession,
   deleteAttachment,
+  getActivity,
   getBoard,
   getGallery,
   getTasks,
+  isRetryableFieldOpsError,
   updateTask,
   uploadTaskAttachment,
 } from '../lib/fieldOpsApi';
@@ -24,11 +27,13 @@ import type {
   TripParticipant,
   TripTask,
   TripTaskAttachment,
+  TripTaskUpdate,
 } from '../types/fieldOps';
 
 const ACTIVE_BOARD_SLUG = 'apr-2026-field-test';
 const PARTICIPANT_STORAGE_KEY = 'fieldOpsParticipantName';
 const SESSION_STORAGE_KEY = 'fieldOpsSessionToken';
+const MAX_UPLOAD_RETRIES = 2;
 
 const ROUTE_LABELS: Record<string, string> = {
   citywalk: 'CityWalk',
@@ -60,12 +65,14 @@ export default function FieldOps() {
 
   const [tasks, setTasks] = useState<TripTask[]>([]);
   const [gallery, setGallery] = useState<TripTaskAttachment[]>([]);
+  const [activity, setActivity] = useState<TripTaskUpdate[]>([]);
 
   const [activeRoute, setActiveRoute] = useState<string>('all');
   const [galleryRoute, setGalleryRoute] = useState<string>('all');
   const [galleryParticipant, setGalleryParticipant] = useState<string>('all');
   const [uploadingTaskId, setUploadingTaskId] = useState<string | null>(null);
   const [uploadCaptions, setUploadCaptions] = useState<Record<string, string>>({});
+  const [uploadFeedback, setUploadFeedback] = useState<Record<string, string>>({});
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -153,19 +160,27 @@ export default function FieldOps() {
     [gallery, galleryParticipant, galleryRoute],
   );
 
+  const visibleActivity = useMemo(
+    () =>
+      activity.filter((entry) => activeRoute === 'all' || entry.routeKey === activeRoute),
+    [activity, activeRoute],
+  );
+
   const refreshData = async (token: string) => {
     setIsLoadingData(true);
     setError(null);
 
     try {
-      const [tasksPayload, galleryPayload] = await Promise.all([
+      const [tasksPayload, galleryPayload, activityPayload] = await Promise.all([
         getTasks(ACTIVE_BOARD_SLUG, token),
         getGallery(ACTIVE_BOARD_SLUG, token),
+        getActivity(ACTIVE_BOARD_SLUG, token),
       ]);
 
       setTasks(tasksPayload.tasks);
       setDraftNotes(Object.fromEntries(tasksPayload.tasks.map((task) => [task.id, task.notes])));
       setGallery(galleryPayload.attachments);
+      setActivity(activityPayload.updates);
     } catch (caughtError) {
       setError(toMessage(caughtError));
       setIsSessionReady(false);
@@ -218,16 +233,29 @@ export default function FieldOps() {
   };
 
   const handleUpload = async (taskId: string, file: File | null) => {
-    if (!file || !sessionToken) {
+    if (!file || !sessionToken || uploadingTaskId === taskId) {
       return;
     }
 
     try {
       setUploadingTaskId(taskId);
-      await uploadTaskAttachment(taskId, sessionToken, file, uploadCaptions[taskId] ?? '');
+      setUploadFeedback((previous) => ({
+        ...previous,
+        [taskId]: 'Uploading photo…',
+      }));
+
+      await retryUpload(taskId, sessionToken, file, uploadCaptions[taskId] ?? '');
       setUploadCaptions((previous) => ({ ...previous, [taskId]: '' }));
+      setUploadFeedback((previous) => ({
+        ...previous,
+        [taskId]: 'Photo synced.',
+      }));
       await refreshData(sessionToken);
     } catch (caughtError) {
+      setUploadFeedback((previous) => ({
+        ...previous,
+        [taskId]: 'Upload failed. Try once more.',
+      }));
       setError(toMessage(caughtError));
     } finally {
       setUploadingTaskId(null);
@@ -348,6 +376,38 @@ export default function FieldOps() {
             </div>
           </section>
 
+          <section className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                <History size={16} /> Recent activity
+              </h2>
+              <p className="text-xs text-slate-500">{visibleActivity.length} updates</p>
+            </div>
+
+            {visibleActivity.length === 0 ? (
+              <p className="text-sm text-slate-500">No recent activity for this route yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {visibleActivity.slice(0, 8).map((entry) => (
+                  <article key={entry.id} className="rounded-lg border border-slate-200 px-3 py-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{activityMessage(entry)}</p>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          {entry.routeKey ? `${routeLabel(entry.routeKey)} · ` : ''}
+                          {entry.byName}
+                        </p>
+                      </div>
+                      <p className="text-[11px] text-slate-400 whitespace-nowrap">
+                        {formatRelativeTime(entry.createdAt)}
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
           <section className="space-y-3">
             {isLoadingData ? (
               <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm text-sm text-slate-500 flex items-center gap-2">
@@ -427,7 +487,11 @@ export default function FieldOps() {
                             type="file"
                             accept="image/jpeg,image/png,image/webp"
                             capture="environment"
-                            onChange={(event) => void handleUpload(task.id, event.target.files?.[0] ?? null)}
+                            onChange={(event) => {
+                              const nextFile = event.target.files?.[0] ?? null;
+                              void handleUpload(task.id, nextFile);
+                              event.target.value = '';
+                            }}
                             className="block w-full text-xs text-slate-500"
                           />
                           <input
@@ -444,6 +508,9 @@ export default function FieldOps() {
                           />
                           {uploadingTaskId === task.id && (
                             <p className="text-xs text-slate-500">Uploading…</p>
+                          )}
+                          {uploadFeedback[task.id] && uploadingTaskId !== task.id && (
+                            <p className="text-xs text-slate-500">{uploadFeedback[task.id]}</p>
                           )}
                         </div>
                       </article>
@@ -579,6 +646,57 @@ function StatusButton({ label, active, onClick }: { label: string; active: boole
 
 function routeLabel(routeKey: string) {
   return ROUTE_LABELS[routeKey] ?? routeKey;
+}
+
+function activityMessage(entry: TripTaskUpdate) {
+  const subject = entry.taskTitle ? `"${entry.taskTitle}"` : 'a task';
+
+  if (entry.action === 'attachment-upload') {
+    return `Uploaded a photo for ${subject}`;
+  }
+
+  if (entry.action === 'attachment-delete') {
+    return `Deleted a photo from ${subject}`;
+  }
+
+  return `Updated ${subject}`;
+}
+
+function formatRelativeTime(value: string) {
+  const diffMs = new Date(value).getTime() - Date.now();
+  const diffMinutes = Math.round(diffMs / (1000 * 60));
+  const formatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+  if (Math.abs(diffMinutes) < 60) {
+    return formatter.format(diffMinutes, 'minute');
+  }
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (Math.abs(diffHours) < 24) {
+    return formatter.format(diffHours, 'hour');
+  }
+
+  return formatter.format(Math.round(diffHours / 24), 'day');
+}
+
+async function retryUpload(taskId: string, sessionToken: string, file: File, caption: string) {
+  for (let attempt = 0; attempt <= MAX_UPLOAD_RETRIES; attempt += 1) {
+    try {
+      return await uploadTaskAttachment(taskId, sessionToken, file, caption);
+    } catch (caughtError) {
+      if (attempt === MAX_UPLOAD_RETRIES || !isRetryableFieldOpsError(caughtError)) {
+        throw caughtError;
+      }
+
+      await delay(400 * (attempt + 1));
+    }
+  }
+
+  throw new Error('Upload failed after retries');
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function toMessage(caughtError: unknown) {

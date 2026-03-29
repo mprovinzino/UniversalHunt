@@ -1,3 +1,4 @@
+import { getStore } from '@netlify/blobs';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 
@@ -16,13 +17,20 @@ const ACTIVE_ROUTE_KEYS = [
   'minion-mischief',
   'springfield-side-quest',
 ];
-const STORE_DIR = '/tmp/universal-hunt-field-ops';
-const STORE_FILE = `${STORE_DIR}/store.json`;
-const ATTACHMENTS_DIR = `${STORE_DIR}/attachments`;
+
+const FILESYSTEM_STORE_DIR = '/tmp/universal-hunt-field-ops';
+const FILESYSTEM_STORE_FILE = `${FILESYSTEM_STORE_DIR}/store.json`;
+const FILESYSTEM_ATTACHMENTS_DIR = `${FILESYSTEM_STORE_DIR}/attachments`;
+const BLOBS_STATE_STORE_NAME = 'field-ops-state';
+const BLOBS_ATTACHMENTS_STORE_NAME = 'field-ops-attachments';
+const BLOBS_STATE_KEY = `${ACTIVE_BOARD_SLUG}/store.json`;
+const STORE_SCHEMA_VERSION = 2;
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 3;
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 const MAX_NOTES_LENGTH = 2000;
+const MAX_ACTIVITY_ENTRIES = 200;
+const DUPLICATE_UPLOAD_WINDOW_MS = 1000 * 60 * 10;
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const ALLOWED_TASK_TYPES = new Set(['photo', 'coordinate', 'clue-test', 'note']);
 const ALLOWED_PRIORITIES = new Set(['must', 'should', 'bonus']);
@@ -45,7 +53,8 @@ const SEEDED_TASKS = [
 
 export default async (request) => {
   try {
-    const store = await loadStore();
+    const storeContext = await loadStoreContext();
+    const store = storeContext.store;
     const { endpoint, id } = parseEndpoint(request.url);
 
     purgeExpiredSessions(store);
@@ -57,7 +66,7 @@ export default async (request) => {
     if (request.method === 'POST' && endpoint === '/session') {
       const payload = await request.json();
       const session = createSession(store, payload);
-      await persistStore(store);
+      await persistStore(storeContext);
       return json(session);
     }
 
@@ -70,53 +79,62 @@ export default async (request) => {
       const session = requireSession(request, store);
       const payload = await request.json();
       updateTask(store, session, id, payload);
-      await persistStore(store);
+      await persistStore(storeContext);
       return json({ taskId: id });
     }
 
     if (request.method === 'POST' && endpoint === '/tasks/upload' && id) {
       const session = requireSession(request, store);
       const payload = await request.formData();
-      const attachment = await uploadAttachment(store, session, id, payload);
-      await persistStore(store);
-      return json({ attachment });
+      const uploadResult = await uploadAttachment(storeContext, store, session, id, payload);
+
+      try {
+        await persistStore(storeContext);
+      } catch (error) {
+        await rollbackUploadedAttachment(storeContext, uploadResult.cleanupBlobKey);
+        throw error;
+      }
+
+      return json({ attachment: uploadResult.attachment });
     }
 
     if (request.method === 'GET' && endpoint === '/gallery') {
       const session = requireSession(request, store);
-      const attachments = store.attachments
-        .filter((attachment) => attachment.tripBoardId === session.boardId)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      return json({ attachments });
+      return json({ attachments: listBoardAttachments(store, session.boardId) });
     }
 
     if (request.method === 'GET' && endpoint === '/attachments' && id) {
       requireSession(request, store);
-      return await sendAttachment(store, id);
+      return await sendAttachment(storeContext, store, id);
     }
 
     if (request.method === 'DELETE' && endpoint === '/attachments' && id) {
       const session = requireSession(request, store);
-      await deleteAttachment(store, session, id);
-      await persistStore(store);
+      const removedAttachment = deleteAttachment(store, session, id);
+      await persistStore(storeContext);
+      await finalizeDeletedAttachment(storeContext, removedAttachment);
       return json({ attachmentId: id });
     }
 
     if (request.method === 'GET' && endpoint === '/activity') {
       const session = requireSession(request, store);
-      const updates = store.updates
-        .filter((entry) => entry.tripBoardId === session.boardId)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .slice(0, 200);
-      return json({ updates });
+      return json({ updates: listBoardUpdates(store, session.boardId) });
     }
 
     return json({ error: 'Not found' }, 404);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown server error';
-    return json({ error: message }, 400);
+    const status = error instanceof FieldOpsError ? error.status : 400;
+    return json({ error: message }, status);
   }
 };
+
+class FieldOpsError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
 
 function getBoardResponse(store) {
   return {
@@ -137,11 +155,11 @@ function createSession(store, payload) {
   const tripCode = payload?.tripCode;
 
   if (slug !== store.board.slug) {
-    throw new Error('Invalid board slug');
+    throw new FieldOpsError('Invalid board slug');
   }
 
   if (!participantName || !tripCode) {
-    throw new Error('Missing participant or trip code');
+    throw new FieldOpsError('Missing participant or trip code');
   }
 
   const allowed = store.participants.find(
@@ -149,11 +167,11 @@ function createSession(store, payload) {
   );
 
   if (!allowed) {
-    throw new Error('Participant name is not approved for this board');
+    throw new FieldOpsError('Participant name is not approved for this board');
   }
 
   if (hashTripCode(tripCode) !== store.board.tripCodeHash) {
-    throw new Error('Trip code is invalid');
+    throw new FieldOpsError('Trip code is invalid');
   }
 
   const token = randomUUID();
@@ -184,13 +202,13 @@ function requireSession(request, store) {
   const token = request.headers.get('x-field-ops-session');
 
   if (!token) {
-    throw new Error('Missing session token');
+    throw new FieldOpsError('Missing session token', 401);
   }
 
   const active = store.sessions.find((session) => session.sessionToken === token);
 
   if (!active || new Date(active.expiresAt).getTime() <= Date.now()) {
-    throw new Error('Session expired or invalid. Please re-enter the trip code.');
+    throw new FieldOpsError('Session expired or invalid. Please re-enter the trip code.', 401);
   }
 
   return {
@@ -210,16 +228,31 @@ function listBoardTasks(store, boardId) {
     });
 }
 
+function listBoardAttachments(store, boardId) {
+  return store.attachments
+    .filter((attachment) => attachment.tripBoardId === boardId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map(toPublicAttachment);
+}
+
+function listBoardUpdates(store, boardId) {
+  return store.updates
+    .filter((entry) => entry.tripBoardId === boardId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, MAX_ACTIVITY_ENTRIES)
+    .map(toPublicUpdate);
+}
+
 function updateTask(store, session, taskId, payload) {
   const task = store.tasks.find((entry) => entry.id === taskId && entry.tripBoardId === session.boardId);
 
   if (!task) {
-    throw new Error('Task not found');
+    throw new FieldOpsError('Task not found', 404);
   }
 
   if (payload.status !== undefined) {
     if (!ALLOWED_STATUSES.has(payload.status)) {
-      throw new Error('Invalid status');
+      throw new FieldOpsError('Invalid status');
     }
     task.status = payload.status;
   }
@@ -227,7 +260,7 @@ function updateTask(store, session, taskId, payload) {
   if (payload.notes !== undefined) {
     const nextNotes = String(payload.notes);
     if (nextNotes.length > MAX_NOTES_LENGTH) {
-      throw new Error(`Notes too long. Max ${MAX_NOTES_LENGTH} characters.`);
+      throw new FieldOpsError(`Notes too long. Max ${MAX_NOTES_LENGTH} characters.`);
     }
     task.notes = nextNotes;
   }
@@ -242,7 +275,7 @@ function updateTask(store, session, taskId, payload) {
       );
 
       if (!allowed) {
-        throw new Error('Assigned participant is not allowed');
+        throw new FieldOpsError('Assigned participant is not allowed');
       }
 
       task.assignedToName = payload.assignedToName;
@@ -251,52 +284,64 @@ function updateTask(store, session, taskId, payload) {
 
   task.updatedByName = session.participantName;
   task.updatedAt = new Date().toISOString();
-  store.updates.push({
-    id: randomUUID(),
+  pushActivityUpdate(store, {
     tripBoardId: session.boardId,
     taskId,
     action: 'task-update',
     byName: session.participantName,
     createdAt: task.updatedAt,
+    routeKey: task.routeKey,
+    taskTitle: task.title,
   });
 }
 
-async function uploadAttachment(store, session, taskId, formData) {
+async function uploadAttachment(storeContext, store, session, taskId, formData) {
   const task = store.tasks.find((entry) => entry.id === taskId && entry.tripBoardId === session.boardId);
 
   if (!task) {
-    throw new Error('Task not found for upload');
+    throw new FieldOpsError('Task not found for upload', 404);
   }
 
   const file = formData.get('file');
   const captionValue = formData.get('caption');
 
   if (!(file instanceof File)) {
-    throw new Error('Upload requires an image file');
+    throw new FieldOpsError('Upload requires an image file');
   }
 
   if (!ALLOWED_MIME_TYPES.has(file.type)) {
-    throw new Error('Unsupported file type. Use JPG, PNG, or WEBP');
+    throw new FieldOpsError('Unsupported file type. Use JPG, PNG, or WEBP');
   }
 
   if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error('File is too large. Max upload is 8MB');
+    throw new FieldOpsError('File is too large. Max upload is 8MB');
   }
 
-  await mkdir(ATTACHMENTS_DIR, { recursive: true });
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const contentHash = createHash('sha256').update(bytes).digest('hex');
+  const existing = findRecentDuplicateAttachment(store, session, task, contentHash);
+
+  if (existing) {
+    return { attachment: toPublicAttachment(existing), cleanupBlobKey: null };
+  }
 
   const extension = file.name.includes('.') ? file.name.split('.').at(-1) : 'jpg';
   const attachmentId = randomUUID();
   const storageFilename = `${attachmentId}.${safeExtension(extension)}`;
-  const filePath = `${ATTACHMENTS_DIR}/${storageFilename}`;
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  await writeFile(filePath, bytes);
-
   const caption =
     typeof captionValue === 'string' && captionValue.trim().length > 0
       ? captionValue.trim().slice(0, 240)
       : null;
   const createdAt = new Date().toISOString();
+
+  await writeAttachmentBlob(storeContext, storageFilename, bytes, {
+    contentHash,
+    filename: file.name,
+    mimeType: file.type,
+    routeKey: task.routeKey,
+    taskId: task.id,
+    uploadedByName: session.participantName,
+  });
 
   const attachment = {
     id: attachmentId,
@@ -311,34 +356,35 @@ async function uploadAttachment(store, session, taskId, formData) {
     caption,
     createdAt,
     downloadUrl: `/api/field-ops/attachments/${attachmentId}`,
+    contentHash,
   };
 
   store.attachments.push(attachment);
-  store.updates.push({
-    id: randomUUID(),
+  pushActivityUpdate(store, {
     tripBoardId: session.boardId,
     taskId,
     action: 'attachment-upload',
     byName: session.participantName,
     createdAt,
+    routeKey: task.routeKey,
+    taskTitle: task.title,
+    attachmentId,
+    caption,
   });
 
-  return attachment;
+  return { attachment: toPublicAttachment(attachment), cleanupBlobKey: storageFilename };
 }
 
-async function sendAttachment(store, attachmentId) {
+async function sendAttachment(storeContext, store, attachmentId) {
   const attachment = store.attachments.find((entry) => entry.id === attachmentId);
 
   if (!attachment) {
     return json({ error: 'Attachment not found' }, 404);
   }
 
-  const filePath = `${ATTACHMENTS_DIR}/${attachment.blobKey}`;
+  const bytes = await readAttachmentBlob(storeContext, attachment.blobKey);
 
-  let bytes;
-  try {
-    bytes = await readFile(filePath);
-  } catch {
+  if (!bytes) {
     return json({ error: 'Attachment file unavailable' }, 404);
   }
 
@@ -352,32 +398,32 @@ async function sendAttachment(store, attachmentId) {
   });
 }
 
-async function deleteAttachment(store, session, attachmentId) {
+function deleteAttachment(store, session, attachmentId) {
   const index = store.attachments.findIndex(
     (entry) => entry.id === attachmentId && entry.tripBoardId === session.boardId,
   );
 
   if (index < 0) {
-    throw new Error('Attachment not found');
+    throw new FieldOpsError('Attachment not found', 404);
   }
 
   const attachment = store.attachments[index];
   store.attachments.splice(index, 1);
 
-  try {
-    await unlink(`${ATTACHMENTS_DIR}/${attachment.blobKey}`);
-  } catch {
-    // If the file already disappeared we still remove metadata.
-  }
-
-  store.updates.push({
-    id: randomUUID(),
+  const task = store.tasks.find((entry) => entry.id === attachment.tripTaskId);
+  pushActivityUpdate(store, {
     tripBoardId: session.boardId,
     taskId: attachment.tripTaskId,
     action: 'attachment-delete',
     byName: session.participantName,
     createdAt: new Date().toISOString(),
+    routeKey: attachment.routeKey,
+    taskTitle: task?.title ?? null,
+    attachmentId: attachment.id,
+    caption: attachment.caption,
   });
+
+  return attachment;
 }
 
 function purgeExpiredSessions(store) {
@@ -387,30 +433,120 @@ function purgeExpiredSessions(store) {
   );
 }
 
-async function loadStore() {
-  await mkdir(STORE_DIR, { recursive: true });
+async function loadStoreContext() {
+  if (shouldUseBlobsStorage()) {
+    return loadBlobsStoreContext();
+  }
+
+  return loadFilesystemStoreContext();
+}
+
+async function loadFilesystemStoreContext() {
+  await mkdir(FILESYSTEM_STORE_DIR, { recursive: true });
 
   try {
-    const raw = await readFile(STORE_FILE, 'utf-8');
-    return migrateStore(JSON.parse(raw));
+    const raw = await readFile(FILESYSTEM_STORE_FILE, 'utf-8');
+    return {
+      mode: 'filesystem',
+      store: migrateStore(JSON.parse(raw)),
+    };
   } catch {
     const seeded = seedStore();
-    await persistStore(seeded);
-    return seeded;
+    await writeFile(FILESYSTEM_STORE_FILE, JSON.stringify(seeded, null, 2), 'utf-8');
+    return {
+      mode: 'filesystem',
+      store: seeded,
+    };
   }
 }
 
-function migrateStore(store) {
+async function loadBlobsStoreContext() {
+  const stateStore = getStore({ name: BLOBS_STATE_STORE_NAME, consistency: 'strong' });
+  const attachmentStore = getStore({ name: BLOBS_ATTACHMENTS_STORE_NAME, consistency: 'strong' });
+  const entry = await stateStore.getWithMetadata(BLOBS_STATE_KEY, {
+    consistency: 'strong',
+    type: 'json',
+  });
+
+  if (entry) {
+    return {
+      mode: 'blobs',
+      store: migrateStore(entry.data),
+      etag: entry.etag,
+      stateStore,
+      attachmentStore,
+    };
+  }
+
+  const seeded = seedStore();
+  const result = await stateStore.setJSON(BLOBS_STATE_KEY, seeded, {
+    metadata: buildStateMetadata(seeded),
+    onlyIfNew: true,
+  });
+
+  if (!result.modified) {
+    return loadBlobsStoreContext();
+  }
+
   return {
-    ...store,
-    updates: Array.isArray(store.updates) ? store.updates : [],
-    sessions: Array.isArray(store.sessions) ? store.sessions : [],
-    attachments: Array.isArray(store.attachments) ? store.attachments : [],
+    mode: 'blobs',
+    store: seeded,
+    etag: result.etag,
+    stateStore,
+    attachmentStore,
   };
 }
 
-async function persistStore(store) {
-  await writeFile(STORE_FILE, JSON.stringify(store, null, 2), 'utf-8');
+function migrateStore(store) {
+  const boardRoutes = Array.isArray(store.board?.routes) && store.board.routes.length > 0
+    ? store.board.routes
+    : ACTIVE_ROUTE_KEYS;
+
+  return {
+    ...store,
+    board: {
+      ...store.board,
+      routes: boardRoutes,
+    },
+    participants: Array.isArray(store.participants) ? store.participants : [],
+    tasks: Array.isArray(store.tasks) ? store.tasks : [],
+    updates: Array.isArray(store.updates)
+      ? store.updates.map((entry) => ({
+          ...entry,
+          routeKey: entry.routeKey ?? null,
+          taskTitle: entry.taskTitle ?? null,
+          attachmentId: entry.attachmentId ?? null,
+          caption: entry.caption ?? null,
+        }))
+      : [],
+    sessions: Array.isArray(store.sessions) ? store.sessions : [],
+    attachments: Array.isArray(store.attachments)
+      ? store.attachments.map((attachment) => ({
+          ...attachment,
+          downloadUrl:
+            attachment.downloadUrl ?? `/api/field-ops/attachments/${attachment.id}`,
+          contentHash: attachment.contentHash ?? null,
+        }))
+      : [],
+  };
+}
+
+async function persistStore(storeContext) {
+  if (storeContext.mode === 'filesystem') {
+    await writeFile(FILESYSTEM_STORE_FILE, JSON.stringify(storeContext.store, null, 2), 'utf-8');
+    return;
+  }
+
+  const result = await storeContext.stateStore.setJSON(BLOBS_STATE_KEY, storeContext.store, {
+    metadata: buildStateMetadata(storeContext.store),
+    ...(storeContext.etag ? { onlyIfMatch: storeContext.etag } : { onlyIfNew: true }),
+  });
+
+  if (!result.modified) {
+    throw new FieldOpsError('Field Ops data changed in another session. Please retry.', 409);
+  }
+
+  storeContext.etag = result.etag ?? storeContext.etag;
 }
 
 function seedStore() {
@@ -488,6 +624,151 @@ function parseEndpoint(url) {
   }
 
   return { endpoint: normalized, id: null };
+}
+
+function findRecentDuplicateAttachment(store, session, task, contentHash) {
+  const cutoff = Date.now() - DUPLICATE_UPLOAD_WINDOW_MS;
+
+  return store.attachments.find(
+    (attachment) =>
+      attachment.tripTaskId === task.id &&
+      attachment.tripBoardId === session.boardId &&
+      attachment.uploadedByName === session.participantName &&
+      attachment.contentHash === contentHash &&
+      new Date(attachment.createdAt).getTime() >= cutoff,
+  );
+}
+
+async function writeAttachmentBlob(storeContext, blobKey, bytes, metadata) {
+  if (storeContext.mode === 'filesystem') {
+    await mkdir(FILESYSTEM_ATTACHMENTS_DIR, { recursive: true });
+    await writeFile(`${FILESYSTEM_ATTACHMENTS_DIR}/${blobKey}`, bytes);
+    return;
+  }
+
+  const result = await storeContext.attachmentStore.set(blobKey, bytes, {
+    metadata,
+    onlyIfNew: true,
+  });
+
+  if (!result.modified) {
+    throw new FieldOpsError('Upload key collision. Please try again.', 409);
+  }
+}
+
+async function readAttachmentBlob(storeContext, blobKey) {
+  if (storeContext.mode === 'filesystem') {
+    try {
+      return await readFile(`${FILESYSTEM_ATTACHMENTS_DIR}/${blobKey}`);
+    } catch {
+      return null;
+    }
+  }
+
+  return storeContext.attachmentStore.get(blobKey, {
+    consistency: 'strong',
+    type: 'arrayBuffer',
+  });
+}
+
+async function rollbackUploadedAttachment(storeContext, blobKey) {
+  if (!blobKey) {
+    return;
+  }
+
+  if (storeContext.mode === 'filesystem') {
+    try {
+      await unlink(`${FILESYSTEM_ATTACHMENTS_DIR}/${blobKey}`);
+    } catch {
+      // Ignore cleanup failures after a rejected metadata write.
+    }
+    return;
+  }
+
+  try {
+    await storeContext.attachmentStore.delete(blobKey);
+  } catch {
+    // Ignore cleanup failures after a rejected metadata write.
+  }
+}
+
+async function finalizeDeletedAttachment(storeContext, attachment) {
+  if (storeContext.mode === 'filesystem') {
+    try {
+      await unlink(`${FILESYSTEM_ATTACHMENTS_DIR}/${attachment.blobKey}`);
+    } catch {
+      // Metadata is already gone, so a missing file is acceptable.
+    }
+    return;
+  }
+
+  try {
+    await storeContext.attachmentStore.delete(attachment.blobKey);
+  } catch {
+    // Metadata is already gone, so an orphaned blob is lower risk than stale metadata.
+  }
+}
+
+function pushActivityUpdate(
+  store,
+  { tripBoardId, taskId, action, byName, createdAt, routeKey = null, taskTitle = null, attachmentId = null, caption = null },
+) {
+  store.updates.push({
+    id: randomUUID(),
+    tripBoardId,
+    taskId,
+    action,
+    byName,
+    createdAt,
+    routeKey,
+    taskTitle,
+    attachmentId,
+    caption,
+  });
+}
+
+function toPublicAttachment(attachment) {
+  return {
+    id: attachment.id,
+    tripTaskId: attachment.tripTaskId,
+    tripBoardId: attachment.tripBoardId,
+    routeKey: attachment.routeKey,
+    taskType: attachment.taskType,
+    blobKey: attachment.blobKey,
+    filename: attachment.filename,
+    mimeType: attachment.mimeType,
+    uploadedByName: attachment.uploadedByName,
+    caption: attachment.caption,
+    createdAt: attachment.createdAt,
+    downloadUrl: attachment.downloadUrl,
+  };
+}
+
+function toPublicUpdate(update) {
+  return {
+    id: update.id,
+    tripBoardId: update.tripBoardId,
+    taskId: update.taskId,
+    action: update.action,
+    byName: update.byName,
+    createdAt: update.createdAt,
+    routeKey: update.routeKey,
+    taskTitle: update.taskTitle,
+    attachmentId: update.attachmentId,
+    caption: update.caption,
+  };
+}
+
+function buildStateMetadata(store) {
+  return {
+    boardId: store.board.id,
+    boardSlug: store.board.slug,
+    schemaVersion: STORE_SCHEMA_VERSION,
+  };
+}
+
+function shouldUseBlobsStorage() {
+  return process.env.NETLIFY === 'true' && process.env.NETLIFY_LOCAL !== 'true';
 }
 
 function safeExtension(extension) {

@@ -15,12 +15,12 @@ The backend is implemented as a Netlify Function at:
 
 - `netlify/functions/field-ops.mjs`
 
-The function currently stores state in temporary runtime storage (`/tmp`) for fast MVP iteration. It now also keeps a lightweight activity feed for task/attachment events.
+The function now stores board state and attachments in Netlify Blobs when running on Netlify, with a `/tmp` fallback for local/off-platform development. It also keeps a lightweight activity feed for task/attachment events.
 
-### Why this is temporary
+### Why this is still MVP-shaped
 
-- It is suitable for low-friction field testing.
-- It is **not durable** enough for long-term production storage.
+- It is durable enough for live field testing on Netlify.
+- It still uses a single shared JSON document for board metadata, so highly concurrent editing is not yet modeled like a full database-backed system.
 
 ## Environment variables
 
@@ -57,6 +57,6 @@ Redirected by `netlify.toml`:
 
 ## Next hardening pass
 
-1. Replace `/tmp` storage with Netlify DB + Netlify Blobs adapters.
-2. Add upload retry + duplicate-submission guard.
-3. Add activity log table/view for auditing task updates.
+1. Consider a normalized database layer if board history, analytics, or concurrent editing become more complex.
+2. Add richer upload progress/offline-resume UX for spotty park connectivity.
+3. Add operator tooling for board reset/export and attachment cleanup.
