@@ -46,7 +46,7 @@ Allowed only as bonus or limited-time variants:
 
 | Step | Anchor | Status | Source | Why it works |
 | --- | --- | --- | --- | --- |
-| `rc-a1` | Lagoon Link Lookout | current | `cw-lagoon-007` | Strongest existing "the resort connects here" anchor |
+| `rc-a1` | Lagoon Link Lookout | calibrated current | `cw-lagoon-007` | Bridge-side lagoon viewpoint now calibrated to the resort-core connection corridor |
 | `rc-a1-alt` | Bridge-adjacent lagoon vista with skyline alignment | proposed add | new field anchor | Gives us a second Signal solve if the current lookout proves too vague |
 | `rc-a2` | Signal proof photo at lagoon connection point | derived | photo step from `rc-a1` | Easy championship-feeling photo proof |
 
@@ -96,7 +96,7 @@ Proof:
 
 Solve target:
 
-- strongest lagoon connection viewpoint
+- bridge-side lagoon connection viewpoint outside the park gates
 
 Draft clue:
 
