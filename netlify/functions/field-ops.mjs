@@ -4,7 +4,7 @@ import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 const ACTIVE_BOARD_SLUG = process.env.FIELD_OPS_ACTIVE_SLUG ?? 'apr-2026-field-test';
 const ACTIVE_BOARD_TITLE =
   process.env.FIELD_OPS_ACTIVE_TITLE ?? 'Universal Hunt Trip Board — April 2026 Field Test';
-const TRIP_CODE = process.env.FIELD_OPS_TRIP_CODE ?? 'universal-ops';
+const TRIP_CODE = process.env.FIELD_OPS_TRIP_CODE ?? 'hunt';
 const ALLOWED_PARTICIPANTS = (process.env.FIELD_OPS_PARTICIPANTS ?? 'Mike,Teammate 2,Teammate 3')
   .split(',')
   .map((name) => name.trim())

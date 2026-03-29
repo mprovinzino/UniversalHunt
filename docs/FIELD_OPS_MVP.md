@@ -26,7 +26,7 @@ The function currently stores state in temporary runtime storage (`/tmp`) for fa
 
 - `FIELD_OPS_ACTIVE_SLUG` (default: `apr-2026-field-test`)
 - `FIELD_OPS_ACTIVE_TITLE` (default: `Universal Hunt Trip Board — April 2026 Field Test`)
-- `FIELD_OPS_TRIP_CODE` (default: `universal-ops`)
+- `FIELD_OPS_TRIP_CODE` (default: `hunt`)
 - `FIELD_OPS_PARTICIPANTS` (comma-separated names)
 
 Example:
