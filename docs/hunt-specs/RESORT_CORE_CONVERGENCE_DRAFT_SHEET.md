@@ -63,7 +63,7 @@ Allowed only as bonus or limited-time variants:
 
 | Step | Anchor | Status | Source | Why it works |
 | --- | --- | --- | --- | --- |
-| `rc-c1` | 12 Grimmauld Place / hidden world transition cue | current candidate | `ww-kreacher-005` + resort spec | Strong "ordinary street hides another world" logic |
+| `rc-c1` | 12 Grimmauld Place / hidden world transition cue | calibrated current candidate | `ww-kreacher-005` + resort spec | Strong "ordinary street hides another world" logic with a cleaner London waterfront field point |
 | `rc-c1-alt` | London waterfront to Diagon transition zone | proposed add | new field anchor | Potentially clearer than Kreacher alone for the illusion theme |
 | `rc-c1-alt-2` | Hollywood or Production Central marquee facade | proposed add | Studios spec | Good fallback if London/Diagon flow proves too congested |
 | `rc-c2` | Illusion proof photo at the chosen Studios facade/transition | derived | photo step from `rc-c1` | Supports the branch without needing a show or performer |
@@ -163,7 +163,7 @@ Proof:
 
 Preferred solve target:
 
-- London / Diagon hidden-world transition cue
+- London / Diagon hidden-world transition cue near the King's Cross waterfront facades
 
 Fallback solve target:
 

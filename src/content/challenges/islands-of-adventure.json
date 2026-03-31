@@ -36,7 +36,7 @@
     "description": "Outside The Amazing Adventures of Spider-Man ride, find the Daily Bugle newspaper stand with a hidden photo opportunity. Strike a web-slinging pose and capture the moment!",
     "park": "islands-of-adventure",
     "land": "marvel",
-    "coordinates": { "lat": 28.4712, "lng": -81.4690 },
+    "coordinates": { "lat": 28.471386, "lng": -81.469215 },
     "points": 25,
     "difficulty": "easy",
     "type": "photo",
@@ -47,7 +47,7 @@
       "Find the newspaper stand with the Daily Bugle headlines — strike your best Spidey pose!"
     ],
     "photoRequired": true,
-    "searchRadius": 30,
+    "searchRadius": 35,
     "estimatedTime": "5 min",
     "tags": ["marvel", "spider-man", "photo-op"],
     "maxStars": 3,
